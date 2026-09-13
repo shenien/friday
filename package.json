@@ -1,0 +1,35 @@
+{
+  "name": "friday",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n vite,server -c blue,yellow \"vite\" \"npm:dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "node --use-system-ca --env-file-if-exists=.env server/index.js",
+    "build": "tsc -b && vite build",
+    "start": "node --use-system-ca server/index.js",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "express": "^5.2.1",
+    "framer-motion": "^13.2.0",
+    "googleapis": "^180.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}
