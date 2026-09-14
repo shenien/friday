@@ -368,6 +368,7 @@ function EmailRow({
           href={item.gmailUrl}
           target="_blank"
           rel="noreferrer"
+          onClick={onRead}
           className="block truncate text-sm text-ink hover:text-cyan hover:underline"
         >
           {item.subject}
