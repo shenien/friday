@@ -2,9 +2,14 @@ import type {
   CalendarEvent,
   ChatMessage,
   InboxReview,
+  JobStatus,
   Note,
+  SenderRule,
+  SenderStats,
   Task,
   TravelCandidate,
+  TriageBucket,
+  TriageState,
   UnsubscribeCandidate,
 } from "../types";
 
@@ -104,6 +109,54 @@ export const api = {
 
   removeFact: (index: number) =>
     fetch(`/api/memory/${index}`, { method: "DELETE" }).then((r) => json<{ facts: string[] }>(r)),
+
+  getTriage: () => fetch("/api/triage").then((r) => json<{ state: TriageState; job: JobStatus }>(r)),
+
+  runTriage: () => fetch("/api/triage/run", { method: "POST" }).then((r) => json<{ job: JobStatus }>(r)),
+
+  dismissTriage: (threadId: string, messageId: string) =>
+    fetch("/api/triage/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, messageId }),
+    }).then((r) => json<{ state: TriageState }>(r)),
+
+  markThreadRead: (threadId: string) =>
+    fetch(`/api/triage/thread/${threadId}/read`, { method: "POST" }).then((r) => json<{ state: TriageState }>(r)),
+
+  markThreadSpam: (threadId: string) =>
+    fetch(`/api/triage/thread/${threadId}/spam`, { method: "POST" }).then((r) => json<{ state: TriageState }>(r)),
+
+  markBucketRead: (bucket: TriageBucket) =>
+    fetch(`/api/triage/bucket/${bucket}/read`, { method: "POST" }).then((r) =>
+      json<{ state: TriageState; marked: number }>(r),
+    ),
+
+  unsubscribeThread: (threadId: string) =>
+    fetch(`/api/triage/thread/${threadId}/unsubscribe`, { method: "POST" }).then((r) =>
+      json<{ ok: boolean; state: TriageState }>(r),
+    ),
+
+  getSenders: () =>
+    fetch("/api/senders").then((r) =>
+      json<{ stats: SenderStats; rules: Record<string, SenderRule>; job: JobStatus }>(r),
+    ),
+
+  analyzeSenders: () => fetch("/api/senders/analyze", { method: "POST" }).then((r) => json<{ job: JobStatus }>(r)),
+
+  setSenderRule: (email: string, rule: SenderRule | null) =>
+    fetch("/api/senders/rule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, rule }),
+    }).then((r) => json<{ rules: Record<string, SenderRule> }>(r)),
+
+  unsubscribeSender: (email: string) =>
+    fetch("/api/senders/unsubscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    }).then((r) => json<{ ok: boolean }>(r)),
 
   approveTravel: (id: string) =>
     fetch(`/api/gmail/travel/${id}/approve`, { method: "POST" }).then((r) =>

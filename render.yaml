@@ -16,3 +16,5 @@ services:
         sync: false
       - key: GOOGLE_REDIRECT_URI
         sync: false
+      - key: FRIDAY_PASSWORD
+        sync: false

@@ -1,3 +1,4 @@
+import net from "node:net";
 import { google } from "googleapis";
 
 const HEADER_NAMES = ["From", "Subject", "List-Unsubscribe", "List-Unsubscribe-Post", "Date"];
@@ -79,17 +80,71 @@ export function gmailUrl(threadId, email) {
   return `${base}#inbox/${threadId}`;
 }
 
+// Unsubscribe URLs come from untrusted email headers, and this server makes
+// the request itself — so refuse anything that points at localhost, private
+// networks, or cloud metadata addresses.
+function isSafePublicUrl(raw) {
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || /\.(localhost|local|internal)$/.test(host)) return false;
+  if (net.isIPv6(host)) return false;
+  if (net.isIPv4(host)) {
+    const [a, b] = host.split(".").map(Number);
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+  }
+  return true;
+}
+
+// Follows redirects by hand so every hop gets the same safety check.
+async function safeFetch(url, init, maxHops = 5) {
+  let current = url;
+  let { method, body } = init;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    if (!isSafePublicUrl(current)) throw new Error("Unsubscribe link looks unsafe, so I skipped it.");
+    const res = await fetch(current, {
+      ...init,
+      method,
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(15000),
+    });
+    const location = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && location) {
+      current = new URL(location, current).toString();
+      if (res.status === 303 || (method === "POST" && (res.status === 301 || res.status === 302))) {
+        method = "GET";
+        body = undefined;
+      }
+      continue;
+    }
+    return res;
+  }
+  throw new Error("Unsubscribe link redirected too many times.");
+}
+
 // Fires the sender's unsubscribe link. This is a real request to a
 // third-party endpoint, so it should only ever be called after the user has
 // explicitly approved that specific item in the review queue — never automatically.
 export async function fireUnsubscribe(url, oneClick) {
-  const res = oneClick
-    ? await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "List-Unsubscribe=One-Click",
-        redirect: "follow",
-      })
-    : await fetch(url, { method: "GET", redirect: "follow" });
+  const res = await safeFetch(
+    url,
+    oneClick
+      ? {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "List-Unsubscribe=One-Click",
+        }
+      : { method: "GET" },
+  );
   return res.ok;
 }

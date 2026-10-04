@@ -11,11 +11,16 @@ import * as googleAuth from "./google.js";
 import { getUpcomingEvents, createEvent } from "./calendar.js";
 import * as inboxTriage from "./inboxTriage.js";
 import * as tripPacking from "./tripPacking.js";
+import * as triage from "./triage.js";
+import * as senders from "./senders.js";
+import { toJobError } from "./senders.js";
+import { passwordGate } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.join(__dirname, "../dist");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3003;
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
@@ -25,6 +30,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 // explicitly, since a plain "/" would otherwise hit this server directly.
 const CLIENT_ORIGIN = existsSync(DIST_DIR) ? "" : "http://localhost:5176";
 
+app.use(passwordGate({ isProduction: process.env.NODE_ENV === "production" || existsSync(DIST_DIR) }));
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -165,7 +171,8 @@ app.post("/api/gmail/scan", async (_req, res) => {
     res.json(review);
   } catch (err) {
     console.error("gmail scan failed:", err);
-    res.status(503).json({ error: err.message });
+    const failure = toJobError(err);
+    res.status(failure.code === "reauth" ? 401 : 503).json({ error: failure.message, code: failure.code });
   }
 });
 
@@ -200,6 +207,77 @@ app.post("/api/gmail/item/:id/spam", async (req, res) => {
   try {
     const client = await googleAuth.getAuthorizedClient();
     res.json(await inboxTriage.markItemSpam(client, req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- Chief of staff: thread triage + sender intelligence ---
+
+async function withGoogle(res, fn) {
+  try {
+    const client = await googleAuth.getAuthorizedClient();
+    res.json(await fn(client));
+  } catch (err) {
+    const error = toJobError(err);
+    res.status(error.code === "reauth" ? 401 : 500).json({ error: error.message, code: error.code });
+  }
+}
+
+function startJob(res, start) {
+  if (!anthropic) {
+    return res.status(503).json({ error: "ANTHROPIC_API_KEY is not configured on the server." });
+  }
+  return withGoogle(res, async (client) => ({ job: start(client) }));
+}
+
+app.get("/api/triage", async (_req, res) => {
+  res.json(await triage.getTriage());
+});
+
+app.post("/api/triage/run", (_req, res) => startJob(res, (client) => triage.startTriage(client, anthropic, MODEL)));
+
+app.post("/api/triage/dismiss", async (req, res) => {
+  const { threadId, messageId } = req.body || {};
+  if (!threadId || !messageId) return res.status(400).json({ error: "Missing thread." });
+  res.json({ state: await triage.dismiss(threadId, messageId) });
+});
+
+app.post("/api/triage/thread/:id/read", (req, res) =>
+  withGoogle(res, async (client) => ({ state: await triage.markThreadRead(client, req.params.id) })),
+);
+
+app.post("/api/triage/thread/:id/spam", (req, res) =>
+  withGoogle(res, async (client) => ({ state: await triage.markThreadSpam(client, req.params.id) })),
+);
+
+app.post("/api/triage/bucket/:bucket/read", (req, res) =>
+  withGoogle(res, (client) => triage.markBucketRead(client, req.params.bucket)),
+);
+
+app.post("/api/triage/thread/:id/unsubscribe", async (req, res) => {
+  try {
+    res.json(await triage.unsubscribeThread(req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/senders", async (_req, res) => {
+  res.json(await senders.getSenders());
+});
+
+app.post("/api/senders/analyze", (_req, res) => startJob(res, (client) => senders.startAnalysis(client)));
+
+app.put("/api/senders/rule", async (req, res) => {
+  const { email, rule } = req.body || {};
+  if (!email || typeof email !== "string") return res.status(400).json({ error: "Missing sender." });
+  res.json({ rules: await senders.setRule(email.toLowerCase(), rule) });
+});
+
+app.post("/api/senders/unsubscribe", async (req, res) => {
+  try {
+    res.json(await senders.unsubscribeSender(String(req.body?.email || "").toLowerCase()));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

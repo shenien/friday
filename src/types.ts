@@ -53,6 +53,78 @@ export interface TravelCandidate extends EmailSummary {
   status: "pending" | "added" | "skipped" | "failed";
 }
 
+export type TriageBucket = "reply" | "action" | "updates" | "newsletter" | "noise";
+
+export interface TriageItem {
+  threadId: string;
+  lastMessageId: string;
+  subject: string;
+  fromName: string;
+  fromEmail: string;
+  date: string;
+  ageDays: number;
+  unread: boolean;
+  messageCount: number;
+  snippet: string;
+  bucket: TriageBucket;
+  urgency: "high" | "normal" | "low";
+  reason: string;
+  nextStep: string;
+  due: string | null;
+  vip: boolean;
+  gmailUrl: string;
+  canUnsubscribe: boolean;
+  unsubscribedAt: string | null;
+  dismissed: boolean;
+}
+
+export interface TriageState {
+  generatedAt: string | null;
+  windowDays: number;
+  stats: { threads: number; handled: number };
+  items: TriageItem[];
+}
+
+export interface JobStatus {
+  running: boolean;
+  phase: string | null;
+  done: number;
+  total: number;
+  error: { code: "reauth" | "failed"; message: string } | null;
+}
+
+export type SenderRule = "vip" | "mute";
+
+export interface SenderStat {
+  email: string;
+  domain: string;
+  name: string;
+  count: number;
+  perMonth: number;
+  unread: number;
+  kind: "person" | "newsletter" | "automated";
+  lastDate: string;
+  recentSubjects: string[];
+  canUnsubscribe: boolean;
+  highVolume: boolean;
+  unsubscribedAt: string | null;
+}
+
+export interface SenderStats {
+  generatedAt: string | null;
+  windowDays: number;
+  sampled: number;
+  spanDays: number;
+  totals: {
+    messages: number;
+    uniqueSenders: number;
+    unread: number;
+    automatedShare: number;
+    topTenShare: number;
+  } | null;
+  senders: SenderStat[];
+}
+
 export interface InboxReview {
   scannedAt: string | null;
   stats: { scanned: number; human: number; markedRead: number };

@@ -12,6 +12,7 @@ import { MemoryPanel } from "./components/MemoryPanel";
 import { CaptureBar } from "./components/CaptureBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { GmailPanel } from "./components/GmailPanel";
+import { ChiefOfStaffPanel } from "./components/ChiefOfStaffPanel";
 import { DebriefPanel } from "./components/DebriefPanel";
 import { FocusTimer } from "./components/FocusTimer";
 import { useTasks } from "./hooks/useTasks";
@@ -112,6 +113,10 @@ export default function App() {
 
         <motion.div variants={fadeUp}>
           <FocusTimer tasks={tasks} />
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <ChiefOfStaffPanel />
         </motion.div>
 
         <motion.div variants={fadeUp}>

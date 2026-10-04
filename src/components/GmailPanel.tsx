@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { api } from "../lib/api";
-import type { EmailSummary, InboxReview, TravelCandidate, UnsubscribeCandidate } from "../types";
+import type { InboxReview, TravelCandidate, UnsubscribeCandidate } from "../types";
 
 const EMPTY: InboxReview = {
   scannedAt: null,
@@ -14,13 +14,6 @@ const EMPTY: InboxReview = {
 };
 
 const PAGE_SIZE = 5;
-type Tab = "people" | "orders" | "other";
-const TABS: { key: Tab; label: string }[] = [
-  { key: "people", label: "People" },
-  { key: "orders", label: "Orders & Deliveries" },
-  { key: "other", label: "Other" },
-];
-
 export function GmailPanel() {
   const [review, setReview] = useState<InboxReview>(EMPTY);
   const [scanning, setScanning] = useState(false);
@@ -31,8 +24,6 @@ export function GmailPanel() {
   const [travelShown, setTravelShown] = useState(PAGE_SIZE);
   const [travelResolved, setTravelResolved] = useState<Record<string, "added" | "failed" | "skipped">>({});
   const [travelError, setTravelError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("people");
-  const [shown, setShown] = useState<Record<Tab, number>>({ people: PAGE_SIZE, orders: PAGE_SIZE, other: PAGE_SIZE });
   const [unsubShown, setUnsubShown] = useState(PAGE_SIZE);
   const [justResolved, setJustResolved] = useState<Record<string, "unsubscribed" | "failed" | "dismissed">>({});
   const autoScanFired = useRef(false);
@@ -139,37 +130,10 @@ export function GmailPanel() {
     flashTravel(id, "skipped");
   }
 
-  async function markRead(id: string) {
-    setReview((prev) => ({
-      ...prev,
-      people: prev.people.filter((m) => m.id !== id),
-      orders: prev.orders.filter((m) => m.id !== id),
-      other: prev.other.filter((m) => m.id !== id),
-    }));
-    await api.markItemRead(id);
-  }
-
-  async function markSpam(id: string) {
-    setReview((prev) => ({
-      ...prev,
-      people: prev.people.filter((m) => m.id !== id),
-      orders: prev.orders.filter((m) => m.id !== id),
-      other: prev.other.filter((m) => m.id !== id),
-    }));
-    await api.markItemSpam(id);
-  }
-
   const counts = {
-    people: review.people.length,
-    orders: review.orders.length,
-    other: review.other.length,
     unsub: review.unsubscribeCandidates.filter((c) => c.status === "pending" || justResolved[c.id]).length,
     travel: review.travelCandidates.filter((c) => c.status === "pending" || travelResolved[c.id]).length,
   };
-
-  const activeItems = review[activeTab];
-  const visible = activeItems.slice(0, shown[activeTab]);
-  const remaining = activeItems.length - visible.length;
 
   const pendingUnsub = review.unsubscribeCandidates.filter((c) => c.status === "pending" || justResolved[c.id]);
   const visibleUnsub = pendingUnsub.slice(0, unsubShown);
@@ -180,7 +144,7 @@ export function GmailPanel() {
   const remainingTravel = pendingTravel.length - visibleTravel.length;
 
   return (
-    <div id="inbox" className="glass flex h-full flex-col gap-4 rounded-2xl p-5">
+    <div id="cleanup" className="glass flex h-full flex-col gap-4 rounded-2xl p-5">
       <div className="flex items-center justify-between">
         <button
           onClick={() => setCollapsed((v) => !v)}
@@ -189,7 +153,7 @@ export function GmailPanel() {
           <motion.span animate={{ rotate: collapsed ? -90 : 0 }} className="inline-block">
             ▾
           </motion.span>
-          Inbox
+          Inbox Cleanup
         </button>
         <button
           onClick={scan}
@@ -200,13 +164,19 @@ export function GmailPanel() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <p className="text-sm text-red-400">
+          {error}{" "}
+          {/reconnect|connected/i.test(error) && (
+            <a href="/api/auth/google" className="text-cyan underline">
+              Reconnect Google
+            </a>
+          )}
+        </p>
+      )}
 
       {collapsed ? (
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-faint">
-          <span>People: {counts.people}</span>
-          <span>Orders: {counts.orders}</span>
-          <span>Other: {counts.other}</span>
           <span>Unsubscribe: {counts.unsub}</span>
           <span>Travel found: {counts.travel}</span>
         </div>
@@ -219,49 +189,13 @@ export function GmailPanel() {
           )}
           {!review.scannedAt && !error && (
             <p className="text-sm text-ink-faint">
-              Run a scan and I'll sort what's left into people, orders, and everything else.
+              Run a scan and I'll mark the noise as read and queue up anything worth unsubscribing from.
             </p>
           )}
 
-          <div className="flex gap-1 border-b border-white/10 pb-2 text-xs">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`rounded-md px-2.5 py-1 transition ${
-                  activeTab === tab.key
-                    ? "bg-cyan/15 text-cyan"
-                    : "text-ink-faint hover:text-ink"
-                }`}
-              >
-                {tab.label} ({counts[tab.key]})
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-2">
-            {visible.length === 0 && (
-              <p className="text-sm text-ink-faint">Nothing here, Boss.</p>
-            )}
-            <AnimatePresence initial={false}>
-              {visible.map((item) => (
-                <EmailRow
-                  key={item.id}
-                  item={item}
-                  onRead={() => markRead(item.id)}
-                  onSpam={activeTab !== "people" ? () => markSpam(item.id) : undefined}
-                />
-              ))}
-            </AnimatePresence>
-            {remaining > 0 && (
-              <button
-                onClick={() => setShown((s) => ({ ...s, [activeTab]: s[activeTab] + PAGE_SIZE }))}
-                className="text-xs text-ink-faint transition hover:text-cyan"
-              >
-                Show {Math.min(remaining, PAGE_SIZE)} more ({remaining} left)
-              </button>
-            )}
-          </div>
+          {review.scannedAt && counts.unsub === 0 && counts.travel === 0 && (
+            <p className="text-sm text-ink-faint">All tidy — nothing to review, Boss.</p>
+          )}
 
           {counts.unsub > 0 && (
             <div className="border-t border-white/10 pt-3">
@@ -343,55 +277,6 @@ export function GmailPanel() {
         </>
       )}
     </div>
-  );
-}
-
-function EmailRow({
-  item,
-  onRead,
-  onSpam,
-}: {
-  item: EmailSummary;
-  onRead: () => void;
-  onSpam?: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
-      className="flex items-start gap-2 rounded-lg bg-white/5 px-3 py-2"
-    >
-      <div className="min-w-0 flex-1">
-        <a
-          href={item.gmailUrl}
-          target="_blank"
-          rel="noreferrer"
-          onClick={onRead}
-          className="block truncate text-sm text-ink hover:text-cyan hover:underline"
-        >
-          {item.subject}
-        </a>
-        <p className="truncate text-xs text-ink-faint">{item.from}</p>
-      </div>
-      <button
-        onClick={onRead}
-        className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-xs text-ink-faint transition hover:text-cyan"
-        title="Mark as read"
-      >
-        Read
-      </button>
-      {onSpam && (
-        <button
-          onClick={onSpam}
-          className="shrink-0 rounded-md bg-red-400/15 px-2 py-1 text-xs text-red-400 transition hover:bg-red-400/25"
-          title="Mark as spam"
-        >
-          Spam
-        </button>
-      )}
-    </motion.div>
   );
 }
 
